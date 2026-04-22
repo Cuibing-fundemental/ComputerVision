@@ -1,4 +1,4 @@
-from hw1.utils import Fc,Relu,Module,Sigmoid
+from utils import Fc,Relu,Module,Sigmoid
 
 class MLP(Module):
     def __init__(self, hidden1 = 512, hidden2 = 256, nonlin = "relu"):

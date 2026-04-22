@@ -1,7 +1,9 @@
-from hw1.model import MLP
-from hw1.utils import *
+from model import MLP
+from utils import *
 import matplotlib.pyplot as plt
 import numpy as np
+from tqdm import tqdm
+from sklearn.model_selection import ParameterGrid
 
 def train(model, train_img, train_label, valid_img,
            valid_label, batch_size, learning_rate, weight_decay, epoches):
@@ -10,59 +12,65 @@ def train(model, train_img, train_label, valid_img,
     Train_acc = []
     Valid_acc = []
     Model_snapshot = []
-    print("Start training... Total epochs:", epoches)
 
     n = len(train_img)
-    for epoch in range(epoches):
-        indices = np.random.permutation(n)
-        train_img_shuffled = train_img[indices]
-        train_label_shuffled = train_label[indices]
-        
-        epoch_loss = 0
-        epoch_acc = 0
-        num_batches =  n // batch_size
-        
-        for i in range(num_batches):
-            model.zero_grad()
-            start_idx = i * batch_size
-            end_idx = start_idx + batch_size
+    with tqdm(range(epoches)) as epoch_bar:
+        for epoch in epoch_bar:
+            indices = np.random.permutation(n)
+            train_img_shuffled = train_img[indices]
+            train_label_shuffled = train_label[indices]
             
-            batch_imgs = train_img_shuffled[start_idx:end_idx]
-            batch_labels = train_label_shuffled[start_idx:end_idx]
+            epoch_loss = 0
+            epoch_acc = 0
+            num_batches =  n // batch_size
             
-            input_val = Value(batch_imgs) 
-            y_pred = model.forward(input_val)
-            
-            ce = cross_entropy(y_pred, batch_labels)
-            ce.backward()
-            
-            ## Cosine learning rate decay
-            lr_decay = (1 + np.cos(epoch / epoches * np.pi)) / 2
-            current_lr = learning_rate * lr_decay
+            for i in range(num_batches):
+                model.zero_grad()
+                start_idx = i * batch_size
+                end_idx = start_idx + batch_size
+                
+                batch_imgs = train_img_shuffled[start_idx:end_idx]
+                batch_labels = train_label_shuffled[start_idx:end_idx]
+                
+                input_val = Value(batch_imgs) 
+                y_pred = model.forward(input_val)
+                
+                ce = cross_entropy(y_pred, batch_labels)
+                ce.backward()
+                
+                ## Cosine learning rate decay
+                lr_decay = (1 + np.cos(epoch / epoches * np.pi)) / 2
+                current_lr = learning_rate * lr_decay
 
-            ## Weight decay
-            for name, para in model.named_parameters():
-                if "weight" in name:
-                    para.grad += weight_decay * para.data
+                ## Weight decay
+                for name, para in model.named_parameters():
+                    if "weight" in name:
+                        para.grad += weight_decay * para.data
 
-            model.update(current_lr)
+                model.update(current_lr)
+                
+                acc = accuracy(y_pred, batch_labels)
+                epoch_loss += ce.data
+                epoch_acc += acc
+
+            y_valid = model.forward(Value(valid_img))
+            valid_acc = accuracy(y_valid, valid_label)
+            valid_loss = cross_entropy(y_valid, valid_label).data
+            train_loss = epoch_loss / num_batches
+            train_acc = epoch_acc / num_batches
+            Train_loss.append(train_loss)
+            Valid_loss.append(valid_loss)
+            Train_acc.append(train_acc)
+            Valid_acc.append(valid_acc)
+            Model_snapshot.append(model.state_dict())
+
+            # Update tqdm description with current metrics
+            epoch_bar.set_postfix({
+                'Loss': f"{train_loss:.4f}",
+                'TrainACC': f"{train_acc:.4f}",
+                'ValidACC': f"{valid_acc:.4f}"
+            })
             
-            acc = accuracy(y_pred, batch_labels)
-            epoch_loss += ce.data
-            epoch_acc += acc
-
-        y_valid = model.forward(Value(valid_img))
-        valid_acc = accuracy(y_valid, valid_label)
-        valid_loss = cross_entropy(y_valid, valid_label).data
-        train_loss = epoch_loss / num_batches
-        train_acc = epoch_acc/ num_batches
-        Train_loss.append(train_loss)
-        Valid_loss.append(valid_loss)
-        Train_acc.append(train_acc)
-        Valid_acc.append(valid_acc)
-        Model_snapshot.append(model.state_dict())
-        print(f"Epoch {epoch}, Avg Loss: {train_loss:.4f}, ACC:{train_acc:.4f} ACC_test: {valid_acc:.4f}")
-        
     return Train_loss, Valid_loss, Train_acc, Valid_acc, Model_snapshot
 
 def draw_curve(train_loss, valid_loss, train_acc, valid_acc):
@@ -86,6 +94,27 @@ def draw_curve(train_loss, valid_loss, train_acc, valid_acc):
     plt.grid(True)
     plt.show()
 
+def grid_search(model, train_img, train_label, valid_img, valid_label, param_grid):
+    best_acc = 0
+    best_params = None
+
+    for params in ParameterGrid(param_grid):
+        print(f"Testing parameters: {params}")
+        model = MLP(hidden1=params['hiddenlayer'],hidden2=params['hiddenlayer'], nonlin=params['nonlin'])
+        model.zero_grad()
+        TL, VL, TA, VA, MD = train(
+            model, train_img[:], train_label[:], valid_img, valid_label,
+            64, params['LR'], params['weightdecay'], epoches=20
+        )
+        max_valid_acc = max(VA)
+        if max_valid_acc > best_acc:
+            best_acc = max_valid_acc
+            best_params = params
+        
+        print()
+
+    print(f"Best Parameters: {best_params}, Best Validation Accuracy: {best_acc:.4f}")
+    return best_params
 
 if __name__ == "__main__":
     np.random.seed(123)
@@ -98,24 +127,11 @@ if __name__ == "__main__":
     valid_img = img[shuffled_indices[train_n:]]
     valid_label = label[shuffled_indices[train_n:]]
 
-    model = MLP()
-    model.zero_grad()
+    param_grid = {
+    'LR': [1e-5, 1e-4],
+    'weightdecay': [1e-5, 1e-4],
+    'hiddenlayer': [128, 256],
+    'nonlin': ["sigmoid","relu"]
+    }
 
-    BATCHSIZE = 64
-    LR = 1e-4
-    WD = 1e-4
-    EPOCHES = 30
-
-    TL, VL, TA, VA, MD = train(
-        model, train_img[:], train_label[:],valid_img, valid_label,
-        BATCHSIZE, LR, WD, epoches=EPOCHES
-        )
-
-    best_epoch = np.argmax(VA)
-    print("-"*30)
-    print(f"Best_epoch:{best_epoch}, Train_ACC:{TA[best_epoch]}, Valid_ACC:{VA[best_epoch]}")
-    path = "models/model.json"
-    save_model(MD[best_epoch], path)
-    print(f"Model saved to {path}")
-
-    draw_curve(TL, VL, TA, VA)
+    best_params = grid_search(MLP(), train_img, train_label, valid_img, valid_label, param_grid)
