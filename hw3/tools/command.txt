@@ -1,0 +1,88 @@
+python launch.py \
+    --config configs/dreamfusion-sd.yaml \
+    --train \
+    --gpu 0 \
+    system.prompt_processor.prompt="a red apple"
+
+export PYTHONWARNINGS="ignore::FutureWarning"
+
+python launch.py \
+  --config configs/magic123-coarse-sd.yaml \
+  --train \
+  --gpu 0 \
+  system.prompt_processor.prompt="a cute fairy"
+
+export QT_QPA_PLATFORM=offscreen
+
+colmap feature_extractor \
+    --database_path database.db \
+    --image_path blender \
+    --ImageReader.single_camera 1 \
+    --SiftExtraction.use_gpu 0
+
+colmap exhaustive_matcher \
+    --database_path database.db \
+    --SiftMatching.use_gpu 0
+
+
+colmap mapper \
+    --database_path database.db \
+    --image_path blender \
+    --output_path sparse
+
+colmap image_undistorter \
+    --image_path images \
+    --input_path sparse/0 \
+    --output_path dense \
+    --output_type COLMAP
+
+python train.py \
+    -s /root/autodl-tmp/cby/homework/ComputerVision/hw3/data/paimeng/dense \
+    -m /root/autodl-tmp/cby/homework/ComputerVision/hw3/data/paimeng/output
+
+python render.py \
+    -m /root/autodl-tmp/cby/homework/ComputerVision/hw3/data/paimeng/output \
+    --iteration 30000
+
+python launch.py \
+  --config configs/dreamfusion-sd.yaml \
+  --train \
+  --gpu 0 \
+  system.prompt_processor.prompt="a red apple" \
+
+python launch.py \
+  --config outputs/dreamfusion-sd/a_red_apple/configs/parsed.yaml \
+  --export \
+  --gpu 0 \
+  resume=outputs/dreamfusion-sd/a_red_apple/ckpts/last.ckpt \
+  system.exporter_type=mesh-exporter \
+  system.exporter.fmt=obj-mtl \
+  system.loggers.wandb.enable=false \
+  system.exporter.save_uv=true \
+  system.geometry.isosurface_method=mc-cpu \
+  system.geometry.isosurface_threshold=5. \
+  system.geometry.isosurface_resolution=256 \
+  system.geometry.isosurface_coarse_to_fine=true \
+  system.geometry.isosurface_outlier_n_faces_threshold=0.01
+
+
+CUDA_VISIBLE_DEVICES=0 python launch.py \
+    --config configs/magic123-coarse-sd.yaml \
+    --train \
+    system.loggers.wandb.enable=true \
+    system.prompt_processor.prompt="a big watermelon"
+
+python launch.py \
+  --config outputs/magic123-coarse-sd/gt.png-a_big_watermelon/configs/parsed.yaml \
+  --export \
+  --gpu 0 \
+  resume=outputs/magic123-coarse-sd/gt.png-a_big_watermelon/ckpts/last.ckpt \
+  system.exporter_type=mesh-exporter \
+  system.exporter.fmt=obj-mtl \
+  system.loggers.wandb.enable=false \
+  system.exporter.save_uv=true \
+  system.geometry.isosurface_method=mc-cpu \
+  system.geometry.isosurface_threshold=5. \
+  system.geometry.isosurface_resolution=256 \
+  system.geometry.isosurface_coarse_to_fine=true \
+  system.geometry.isosurface_outlier_n_faces_threshold=0.01
